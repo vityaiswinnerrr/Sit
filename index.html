@@ -447,108 +447,126 @@
     "welcome10": 10
   };
 
-  // Дані кейсів
-  const casesData = [
-    {
-      name: "Донат-кейс",
-      prices: {1:35, 3:90, 6:130},
-      img: "https://shop.bgrief.fun/case.png"
-    },
-    {
-      name: "Валюта-кейс",
-      prices: {1:40, 3:120, 6:180},
-      img: "https://shop.bgrief.fun/case.png"
-    },
-    {
-      name: "Титул-кейс",
-      prices: {1:25, 3:70, 6:100},
-      img: "https://shop.bgrief.fun/case.png"
-    }
-  ];
-
-  
   const donates = {
-    grif: [
-      {name: 'PAN', price: 10, desc: 'Базові можливості, /kit pan', img: 'https://shop.bgrief.fun/golova.jpg'},
-      {name: 'LORD', price: 50, desc: 'Доступ до /fly, +бонуси', img: 'https://shop.bgrief.fun/golova.jpg'},
-      {name: 'KNYAZ', price: 100, desc: 'Унікальні набори, чат-префікс', img: 'https://shop.bgrief.fun/golova.jpg'},
-      {name: 'IMPERATOR', price: 200, desc: 'Всі переваги + /godmode', img: 'https://shop.bgrief.fun/golova.jpg'},
-      {name: 'FANTOM', price: 350, desc: 'Ексклюзивна броня, анімації', img: 'https://shop.bgrief.fun/golova.jpg'},
-      {name: 'SPONSOR', price: 500, desc: 'Макс. бонуси, повага на сервері', img: 'https://shop.bgrief.fun/golova.jpg'},
-      {name: 'SUMER', price: 300, desc: 'Літня акція з унікальними предметами', img: 'https://shop.bgrief.fun/golova.jpg'}
-    ],
-    duel: [
-      {name: 'TITAN', price: 15, desc: '', img: ''},
-      {name: 'GOD', price: 40, desc: '', img: ''},
-      {name: 'PREMIUM', price: 100, desc: '', img: ''},
-      
-    ]
-  };
+  grif: [
+    {name: 'PAN', price: 10, desc: 'Базові можливості, /kit pan', img: 'https://shop.bgrief.fun/golova.jpg'},
+    {name: 'LORD', price: 50, desc: 'Доступ до /fly, +бонуси', img: 'https://shop.bgrief.fun/golova.jpg'},
+    {name: 'KNYAZ', price: 100, desc: 'Унікальні набори, чат-префікс', img: 'https://shop.bgrief.fun/golova.jpg'},
+    {name: 'IMPERATOR', price: 200, desc: 'Всі переваги + /godmode', img: 'https://shop.bgrief.fun/golova.jpg'},
+    {name: 'FANTOM', price: 350, desc: 'Ексклюзивна броня, анімації', img: 'https://shop.bgrief.fun/golova.jpg'},
+    {name: 'SPONSOR', price: 500, desc: 'Макс. бонуси, повага на сервері', img: 'https://shop.bgrief.fun/golova.jpg'},
+    {name: 'SUMER', price: 300, desc: 'Літня акція з унікальними предметами', img: 'https://shop.bgrief.fun/golова.jpg'}
+  ],
+  duel: [
+    {name: 'TITAN', price: 15, desc: '', img: ''},
+    {name: 'GOD', price: 40, desc: '', img: ''},
+    {name: 'PREMIUM', price: 100, desc: '', img: ''},
+  ]
+};
 
-  const grifBtn = document.getElementById('grifBtn');
-  const duelBtn = document.getElementById('duelBtn');
-  const donateList = document.getElementById('donateList');
-  const homeSection = document.getElementById('homeSection');
-  const modeSelectHome = document.getElementById('modeSelectHome');
-  const donateSection = document.getElementById('donateSection');
-  const modeMessage = document.getElementById('modeMessage');
-  const ipContainer = document.getElementById('ipContainer');
-  const copyIpBtn = document.getElementById('copyIpBtn');
-  const copyMessage = document.getElementById('copyMessage');
-  const backBtn = document.getElementById('backBtn');
+// === КЕЙСИ ===
+const casesData = [
+  {
+    name: "Донат-кейс",
+    prices: {1:35, 3:90, 6:130},
+    img: "https://shop.bgrief.fun/case.png"
+  },
+  {
+    name: "Валюта-кейс",
+    prices: {1:40, 3:120, 6:180},
+    img: "https://shop.bgrief.fun/case.png"
+  },
+  {
+    name: "Титул-кейс",
+    prices: {1:25, 3:70, 6:100},
+    img: "https://shop.bgrief.fun/case.png"
+  }
+];
+
+// === ДОНАТ-ВАЛЮТА ===
+const currencyPacks = [
+  { name: "100 монет", amount: 100, price: 50 },
+  { name: "250 монет", amount: 250, price: 125 },
+  { name: "500 монет", amount: 500, price: 200 },
+  { name: "1000 монет", amount: 1000, price: 500 }
+];
+
+const grifBtn = document.getElementById('grifBtn');
+const duelBtn = document.getElementById('duelBtn');
+const donateList = document.getElementById('donateList');
+const homeSection = document.getElementById('homeSection');
+const modeSelectHome = document.getElementById('modeSelectHome');
+const donateSection = document.getElementById('donateSection');
+const modeMessage = document.getElementById('modeMessage');
+const ipContainer = document.getElementById('ipContainer');
+const copyIpBtn = document.getElementById('copyIpBtn');
+const copyMessage = document.getElementById('copyMessage');
+const backBtn = document.getElementById('backBtn');
+
+let casesContainer = document.getElementById("casesContainer");
+if(!casesContainer) {
+  casesContainer = document.createElement("div");
+  casesContainer.id = "casesContainer";
+  casesContainer.style.cssText = "display:flex; gap:20px; margin-top:30px; flex-wrap: wrap; justify-content: center;";
+  donateList.after(casesContainer);
+}
+
+let currentMode = null;
+let currentItem = null;
+
+function formatPrice(price) {
+  return price.toFixed(2).replace(".00", "") + " грн";
+}
+
+function renderDonates(mode) {
+  donateList.innerHTML = '';
+  casesContainer.innerHTML = '';
+
+  const now = new Date();
+  const month = now.getMonth();
 
   
-  let casesContainer = document.getElementById("casesContainer");
-  if(!casesContainer) {
-    casesContainer = document.createElement("div");
-    casesContainer.id = "casesContainer";
-    casesContainer.style.cssText = "display:flex; gap:20px; margin-top:30px; flex-wrap: wrap; justify-content: center;";
-    donateList.after(casesContainer);
-  }
-
-  let currentMode = null;
-  let currentItem = null; 
-
-  
-  function formatPrice(price) {
-    return price.toFixed(2).replace(".00", "") + " грн";
-  }
+  donates[mode].forEach(donate => {
+    if (donate.name === 'SUMER' && (month < 5 || month > 7)) return;
+    const div = document.createElement('div');
+    div.className = 'donate-item';
+    div.onclick = () => openModal(donate, 'donate');
+    div.innerHTML = `
+      <img src="${donate.img || 'https://via.placeholder.com/110x110?text=No+Image'}" alt="${donate.name}" class="donate-image" />
+      <p class="donate-name">${donate.name}</p>
+      <p class="donate-price">${donate.price} грн</p>
+    `;
+    donateList.appendChild(div);
+  });
 
   
-  function renderDonates(mode) {
-    donateList.innerHTML = '';
-    casesContainer.innerHTML = '';
+  casesData.forEach(c => {
+    const div = document.createElement("div");
+    div.className = "donate-item";
+    div.style.cursor = "pointer";
+    div.onclick = () => openModal(c, 'case');
+    div.innerHTML = `
+      <img src="${c.img}" alt="${c.name}" class="donate-image" />
+      <p class="donate-name">${c.name}</p>
+    `;
+    casesContainer.appendChild(div);
+  });
 
-    const now = new Date();
-    const month = now.getMonth();
-
-    donates[mode].forEach(donate => {
-      if (donate.name === 'SUMER' && (month < 5 || month > 7)) return; // Літня акція
-      const div = document.createElement('div');
-      div.className = 'donate-item';
-      div.onclick = () => openModal(donate, 'donate');
-      div.innerHTML = `
-        <img src="${donate.img || 'https://via.placeholder.com/110x110?text=No+Image'}" alt="${donate.name}" class="donate-image" />
-        <p class="donate-name">${donate.name}</p>
-        <p class="donate-price">${donate.price} грн</p>
-      `;
-      donateList.appendChild(div);
-    });
-
-    
-    casesData.forEach(c => {
-      const div = document.createElement("div");
-      div.className = "donate-item";
-      div.style.cursor = "pointer";
-      div.onclick = () => openModal(c, 'case');
-      div.innerHTML = `
-        <img src="${c.img}" alt="${c.name}" class="donate-image" />
-        <p class="donate-name">${c.name}</p>
-        
-      `;
-      casesContainer.appendChild(div);
-    });
-  }
+  
+  currencyPacks.forEach(pack => {
+    const div = document.createElement("div");
+    div.className = "donate-item";
+    div.style.cursor = "pointer";
+    div.onclick = () => openModal(pack, 'currency');
+    div.innerHTML = `
+      <img src="https://tse4.mm.bing.net/th?id=OIP.UH4VYmAEL_zN42Q3DTcTgwHaHa&pid=Api&P=0&h=220" alt="${pack.name}" class="donate-image" />
+      <p class="donate-name">${pack.name}</p>
+      <p class="donate-price">${pack.price} грн</p>
+    `;
+    casesContainer.appendChild(div);
+  });
+}
+  
 
   
   function openModal(item, type) {
