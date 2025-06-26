@@ -5,13 +5,13 @@ const { Rcon } = require('rcon-client');
 
 const app = express();
 app.use(bodyParser.json());
- 
+
 const MONO_TOKEN = 'uKHaJC2VisnohHzq2mB4wNrIEd6cWKdebMVNeMtHzHJg';
 const JAR_ID = '3NFVTVCMp';
 
 const RCON_HOST = '107.161.154.161'; 
-const RCON_PORT = 25781;
-const RCON_PASSWORD = 'SJgeyyB74D';
+const RCON_PORT = 25847;
+const RCON_PASSWORD = 'QGtNBbQtt4';
 
 let lastChecked = 0;
 
@@ -28,7 +28,20 @@ function getCommand(nick, product, type, quantity = 1) {
       case 'титул-кейс':
         return `give ${nick} minecraft:name_tag ${quantity}`;
     }
-  } else {
+  }
+
+  if (type === 'currency') {
+    switch (product) {
+      case '100 монет':
+      case '250 монет':
+      case '500 монет':
+      case '1000 монет':
+        const amount = parseInt(product.split(' ')[0]); 
+        return `eco give ${nick} ${amount}`;
+    }
+  }
+
+  if (type === 'donate') {
     switch (product) {
       case 'pan':
         return `give ${nick} minecraft:diamond 1`;
@@ -68,7 +81,11 @@ app.get('/check-payment', async (req, res) => {
       const nick = nickRaw?.trim();
       const product = productRaw?.trim();
       const quantity = parseInt(quantityRaw) || 1;
-      const type = product.toLowerCase().includes('кейс') ? 'case' : 'donate';
+
+      let type = 'donate';
+      const productLower = product.toLowerCase();
+      if (productLower.includes('кейс')) type = 'case';
+      else if (productLower.includes('монет')) type = 'currency';
 
       if (!nick || !product) continue;
 
@@ -88,7 +105,7 @@ app.get('/check-payment', async (req, res) => {
         console.log(` Команда відправлена: ${command}`);
         return res.json({ status: 'done', command });
       } catch (err) {
-        console.error(" Помилка RCON:", err.message);
+        console.error("❌ Помилка RCON:", err.message);
         return res.status(500).json({ status: 'error', error: err.message });
       }
     }
