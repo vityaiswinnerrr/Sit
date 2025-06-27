@@ -441,6 +441,7 @@
 <script>
   
   
+  
   const promoCodes = {
     "admin222": 20,
     "grif50": 50,
@@ -695,8 +696,22 @@ function renderDonates(mode) {
         text += `|PROMO:${promoInput.value.trim()}`;
       }
 
-      const monobankUrl = `https://send.monobank.ua/jar/3NFVTVCMp?amount=${amount}&text=${encodeURIComponent(text)}`;
+       document.getElementById('payBtn').onclick = function() {
+      const nick = document.getElementById('nick').value.trim();
+      const product = document.getElementById('product').value.trim();
+      const quantity = document.getElementById('quantity').value.trim() || "1";
+      const amount = document.getElementById('amount').value.trim();
+
+      if (!nick || !product || !amount) {
+        alert('Заповніть усі поля!');
+        return;
+      }
+
+      const comment = `${nick}|${product}|${quantity}`;
+      const monobankUrl = `https://send.monobank.ua/jar/3NFVTVCMp?amount=${amount}&text=${encodeURIComponent(comment)}`;
+
       window.open(monobankUrl, "_blank");
+    };
 
       document.body.removeChild(modalOverlay);
     });
