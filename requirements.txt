@@ -1,0 +1,5 @@
+imapclient
+pyzmail36
+beautifulsoup4
+pybit
+requests
