@@ -28,7 +28,7 @@ last_update_id = 0
 coins = {
     'SOLUSDT': {'qty': 0.03},
     'WLDUSDT': {'qty': 1},
-    'DOGEUSDT': {'qty': 0.03}  # приклад
+    'DOGEUSDT': {'qty': 0.03}
 }
 
 active_coin = None  # поточна активна монета, None якщо /clear
@@ -45,6 +45,7 @@ def send_telegram(message):
     except Exception as e:
         print("‼️ Telegram error:", e)
 
+# === Статус і позиції ===
 def get_position_info(symbol):
     try:
         positions = session.get_positions(category='linear', symbol=symbol)['result']['list']
@@ -204,7 +205,7 @@ def check_mail():
     return None
 
 def check_telegram_commands():
-    global QTY, last_update_id, active_coin, bot_active
+    global last_update_id, active_coin, bot_active
     try:
         url = f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates?offset={last_update_id+1}"
         response = requests.get(url).json()
