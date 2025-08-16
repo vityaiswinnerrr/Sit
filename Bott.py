@@ -13,6 +13,7 @@ IMAP_SERVER = 'imap.gmail.com'
 
 API_KEY = 'm4qlJh0Vec5PzYjHiC'
 API_SECRET = 'bv4MJZaIOkV3SSBbiH7ugxqyjDww4CEUTp54'
+
 SYMBOL = 'DOGEUSDT'  # Замінюй на потрібну монету
 QTY = 750
 STOP_PERCENT = 3.7
@@ -20,14 +21,14 @@ CHECK_DELAY = 20
 
 # === Telegram ===
 BOT_TOKEN = '7844283362:AAHuxfe22q3K0uvtGcrcgm6iqOEqduU9r-k'
-CHAT_ID = '5369718011'  #⚠️ Вкажи свій chat_id
+CHAT_ID = '5369718011'  # ⚠️ Вкажи свій chat_id
 LOG_INTERVAL_MINUTES = 2
 
 session = HTTP(api_key=API_KEY, api_secret=API_SECRET, recv_window=10000)
 
 # === Глобальні змінні ===
 order_qty = QTY
-qty_changed = False  # флаг зміни суми
+last_qty_sent = None  # Для контролю спаму повідомлень про зміну суми
 
 def round_tick(value):
     return round(value, 6)
@@ -41,10 +42,12 @@ def send_telegram(message):
         print("‼️ Telegram error:", e)
 
 def set_order_qty(new_qty):
-    global order_qty, qty_changed
+    global order_qty, last_qty_sent
     order_qty = new_qty
-    qty_changed = True
-    send_telegram(f"✅ Сума ордера змінена на {order_qty} {SYMBOL}")
+    # Відправляємо повідомлення лише якщо нове значення відрізняється від останнього
+    if last_qty_sent != order_qty:
+        send_telegram(f"✅ Сума ордера змінена на {order_qty} {SYMBOL}")
+        last_qty_sent = order_qty
 
 def get_position_info():
     try:
@@ -108,10 +111,9 @@ def get_total_balance():
                 return round(usdt_balance, 2)
     except Exception as e:
         print("‼️ Помилка балансу:", e)
-        return None
+    return None
 
 def status_report():
-    global qty_changed
     msg = "📊 *Статус бота*\n"
     msg += "✅ Активний\n\n"
     balance = get_total_balance()
@@ -125,11 +127,7 @@ def status_report():
         msg += f"📊 PnL: {pos['pnl_usdt']} USDT ({pos['pnl_percent']}%)\n"
     else:
         msg += "📌 Позиція: немає відкритої\n"
-
-    # Відправляємо повідомлення лише якщо змінилася qty або лог статусу
-    if qty_changed:
-        msg += f"\n💵 Поточна сума ордера: {order_qty} {SYMBOL}"
-        qty_changed = False
+    msg += f"\n💵 Поточна сума ордера: {order_qty} {SYMBOL}"
     send_telegram(msg)
 
 def close_current_position():
@@ -263,7 +261,6 @@ last_log_time = datetime.now() - timedelta(minutes=LOG_INTERVAL_MINUTES)
 while True:
     try:
         now = datetime.now()
-
         # Лог статусу
         if (now - last_log_time).total_seconds() >= LOG_INTERVAL_MINUTES * 60:
             status_report()
@@ -271,11 +268,11 @@ while True:
 
         check_telegram_commands()
 
-        # Перевіряємо сигнали з пошти
         signal = check_mail()
         if signal:
             print(f"\n📩 Сигнал з пошти: {signal}")
             send_telegram(f"📩 Отримано сигнал з пошти: {signal}")
+
             current = get_current_position_side()
             if current is None:
                 open_position(signal)
