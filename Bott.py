@@ -31,7 +31,7 @@ coins = {
     'DOGEUSDT': {'qty': 0.03}
 }
 
-active_coin = None  # поточна активна монета, None якщо /clear
+active_coins = []  # список активних монет
 bot_active = True
 
 def round_tick(value):
@@ -111,23 +111,24 @@ def get_total_balance():
     return None
 
 def status_report():
-    if not active_coin:
+    if not active_coins:
         send_telegram("⏸️ Бот неактивний. Виберіть монету для торгівлі.")
         return
-    msg = f"📊 *Статус бота ({active_coin})*\n✅ Активний\n\n"
-    balance = get_total_balance()
-    msg += f"💰 Баланс: {balance} USDT\n" if balance is not None else "💰 Баланс: ?\n"
-    msg += f"⚙️ QTY: {coins[active_coin]['qty']} {active_coin}\n\n"
-    pos = get_position_info(active_coin)
-    if pos:
-        msg += f"📌 Позиція: *{pos['side']}* {pos['size']} {active_coin}\n"
-        msg += f"🎯 Ціна входу: {pos['entry_price']}\n"
-        msg += f"📈 Поточна: {pos['mark_price']}\n"
-        msg += f"📉 Стоп-лосс: {pos['stop_loss']}\n"
-        msg += f"📊 PnL: {pos['pnl_usdt']} USDT ({pos['pnl_percent']}%)\n"
-    else:
-        msg += "📌 Позиція: немає відкритої\n"
-    send_telegram(msg)
+    for coin in active_coins:
+        msg = f"📊 *Статус бота ({coin})*\n✅ Активний\n\n"
+        balance = get_total_balance()
+        msg += f"💰 Баланс: {balance} USDT\n" if balance is not None else "💰 Баланс: ?\n"
+        msg += f"⚙️ QTY: {coins[coin]['qty']} {coin}\n\n"
+        pos = get_position_info(coin)
+        if pos:
+            msg += f"📌 Позиція: *{pos['side']}* {pos['size']} {coin}\n"
+            msg += f"🎯 Ціна входу: {pos['entry_price']}\n"
+            msg += f"📈 Поточна: {pos['mark_price']}\n"
+            msg += f"📉 Стоп-лосс: {pos['stop_loss']}\n"
+            msg += f"📊 PnL: {pos['pnl_usdt']} USDT ({pos['pnl_percent']}%)\n"
+        else:
+            msg += "📌 Позиція: немає відкритої\n"
+        send_telegram(msg)
 
 def close_current_position(symbol):
     try:
@@ -180,7 +181,8 @@ def get_current_position_side(symbol):
         return None
 
 def check_mail():
-    if not active_coin or not bot_active:
+    signals = {}
+    if not active_coins or not bot_active:
         return None
     with IMAPClient(IMAP_SERVER, ssl=True) as client:
         client.login(EMAIL, EMAIL_PASSWORD)
@@ -196,16 +198,19 @@ def check_mail():
                 html = msg.html_part.get_payload().decode(msg.html_part.charset)
                 body = BeautifulSoup(html, 'html.parser').get_text()
             body = body.upper()[:900]
+            signal = None
             if '1' in body or 'BUY' in body:
-                client.add_flags(uid, '\\Seen')
-                return 'BUY'
+                signal = 'BUY'
             elif '2' in body or 'SELL' in body:
+                signal = 'SELL'
+            if signal:
                 client.add_flags(uid, '\\Seen')
-                return 'SELL'
-    return None
+                for coin in active_coins:
+                    signals[coin] = signal
+    return signals
 
 def check_telegram_commands():
-    global last_update_id, active_coin, bot_active
+    global last_update_id, active_coins, bot_active
     try:
         url = f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates?offset={last_update_id+1}"
         response = requests.get(url).json()
@@ -236,27 +241,31 @@ def check_telegram_commands():
                             send_telegram(f"🔄 Кількість для DOGEUSDT оновлено: {coins['DOGEUSDT']['qty']}")
                         except:
                             send_telegram("⚠️ Використовуй команду так: /qtydoge 0.03")
-                    # вибір активної монети
+                    # вибір активної монети (додає до списку)
                     elif text.upper() in ['SOLUSDT', 'WLDUSDT', 'DOGEUSDT']:
-                        active_coin = text.upper()
+                        coin = text.upper()
+                        if coin not in active_coins:
+                            active_coins.append(coin)
+                            send_telegram(f"✅ Монета {coin} додана для торгівлі")
+                        else:
+                            send_telegram(f"ℹ️ Монета {coin} вже активна")
                         bot_active = True
-                        send_telegram(f"✅ Активна монета: {active_coin}")
                         status_report()
                     elif text.startswith("/clear"):
-                        active_coin = None
+                        active_coins = []
                         bot_active = False
-                        send_telegram("⏸️ Бот зупинено. Монети очищені.")
+                        send_telegram("⏸️ Бот зупинено. Всі монети очищені.")
                     elif text.startswith("/status"):
                         status_report()
                     elif text.startswith("/help"):
                         help_text = (
                             "📌 Доступні команди:\n"
-                            "/status - показати статус активної монети\n"
+                            "/status - показати статус всіх активних монет\n"
                             "/qtysol <число> - змінити кількість SOLUSDT\n"
                             "/qtywld <число> - змінити кількість WLDUSDT\n"
                             "/qtydoge <число> - змінити кількість DOGEUSDT\n"
-                            "SOLUSDT / WLDUSDT / DOGEUSDT - вибір активної монети\n"
-                            "/clear - зупинити бота та очистити активну монету\n"
+                            "SOLUSDT / WLDUSDT / DOGEUSDT - додати монету до торгівлі\n"
+                            "/clear - зупинити бота та очистити всі монети\n"
                             "/help - ця довідка"
                         )
                         send_telegram(help_text)
@@ -272,19 +281,20 @@ while True:
     try:
         now = datetime.now()
         check_telegram_commands()
-        if active_coin and bot_active:
+        if active_coins and bot_active:
             if (now - last_log_time).total_seconds() >= LOG_INTERVAL_MINUTES * 60:
                 status_report()
                 last_log_time = now
-            signal = check_mail()
-            if signal:
-                current = get_current_position_side(active_coin)
-                if current is None:
-                    open_position(signal, active_coin)
-                elif (current == 'Buy' and signal == 'SELL') or (current == 'Sell' and signal == 'BUY'):
-                    close_current_position(active_coin)
-                    time.sleep(2)
-                    open_position(signal, active_coin)
+            signals = check_mail()
+            if signals:
+                for coin, signal in signals.items():
+                    current = get_current_position_side(coin)
+                    if current is None:
+                        open_position(signal, coin)
+                    elif (current == 'Buy' and signal == 'SELL') or (current == 'Sell' and signal == 'BUY'):
+                        close_current_position(coin)
+                        time.sleep(2)
+                        open_position(signal, coin)
         time.sleep(CHECK_DELAY)
     except Exception as e:
         send_telegram(f"‼️ Глобальна помилка: {e}")
