@@ -14,7 +14,7 @@ IMAP_SERVER = 'imap.gmail.com'
 API_KEY = 'm4qlJh0Vec5PzYjHiC'
 API_SECRET = 'bv4MJZaIOkV3SSBbiH7ugxqyjDww4CEUTp54'
 SYMBOL = 'DOGEUSDT'  # Замінюй на потрібну монету
-QTY = 750
+QTY = 1000
 STOP_PERCENT = 3.7
 CHECK_DELAY = 20
 
@@ -109,7 +109,7 @@ def get_total_balance():
 
 def status_report():
     msg = "📊 *Статус бота*\n"
-    msg += "✅ Активний\n\n"
+    msg += "✅ \n\n"
 
     balance = get_total_balance()
     msg += f"💰 Баланс: {balance} USDT\n\n" if balance is not None else "💰 Баланс: ?\n\n"
