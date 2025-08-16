@@ -3,246 +3,186 @@ import threading
 from imapclient import IMAPClient
 import pyzmail
 from pybit.unified_trading import HTTP
-from telegram import Update, ReplyKeyboardMarkup
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
+from datetime import datetime, timedelta
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Updater, CommandHandler, CallbackQueryHandler, CallbackContext
+import requests
 
-# === Налаштування Gmail ===
+# === Налаштування ===
 EMAIL = 'tradebotv1@gmail.com'
 EMAIL_PASSWORD = 'xotv aadd sqnx ggmp'
 IMAP_SERVER = 'imap.gmail.com'
 
-# === Bybit API ===
 API_KEY = 'm4qlJh0Vec5PzYjHiC'
 API_SECRET = 'bv4MJZaIOkV3SSBbiH7ugxqyjDww4CEUTp54'
 
-# === Торгові налаштування ===
-QTY = 300
-STOP_PERCENT = 2.5
-CHECK_DELAY = 20  # перевірка пошти кожні 20 секунд
-STATUS_DELAY = 120  # розсилка статусу кожні 2 хвилини
-
-# === Telegram ===
 BOT_TOKEN = '7844283362:AAHuxfe22q3K0uvtGcrcgm6iqOEqduU9r-k'
 CHAT_ID = '5369718011'
 
-# === Глобальні змінні ===
-active_symbol = None  # монета для торгівлі
-session = HTTP(api_key=API_KEY, api_secret=API_SECRET)
+CHECK_DELAY = 20  # перевірка пошти кожні 20 секунд
+LOG_INTERVAL = 120  # статус у Telegram кожні 2 хвилини
+DELAY_BETWEEN_CLOSE_OPEN = 2  # затримка між закриттям і новою позицією
 
-# === Допоміжні функції ===
-def send_telegram(msg):
-    updater.bot.send_message(chat_id=CHAT_ID, text=msg, parse_mode='Markdown')
+COINS = {
+    'SOLUSDT': {'qty': 3, 'stop_percent': 3},
+    'WLDUSDT': {'qty': 300, 'stop_percent': 2.5},
+    'DOGEUSDT': {'qty': 100, 'stop_percent': 3.7}
+}
 
-def round_tick(price):
-    return round(price, 8)
+client = HTTP(api_key=API_KEY, api_secret=API_SECRET)
 
-def get_total_balance():
-    try:
-        res = session.get_wallet_balance(coin='USDT')
-        return float(res['result']['USDT']['wallet_balance'])
-    except:
-        return None
+selected_coin = None
+trading_enabled = False
+last_log_time = datetime.now()
 
-def get_position_info():
-    if not active_symbol:
-        return None
-    try:
-        positions = session.get_positions(category='linear', symbol=active_symbol)['result']['list']
-        if not positions:
-            return None
-        pos = positions[0]
-        side = pos['side']
-        size = float(pos['size'])
-        entry_price = float(pos['entryPrice'])
-        mark_price = float(session.get_mark_price(symbol=active_symbol)['result']['mark_price'])
-        sl = float(pos.get('stopLoss', 0))
-        pnl = float(pos.get('unrealisedPnl', 0))
-        pnl_percent = round(pnl / entry_price * 100, 2) if entry_price else 0
-        return {
-            'side': side,
-            'size': size,
-            'entry_price': entry_price,
-            'mark_price': mark_price,
-            'stop_loss': sl,
-            'pnl_usdt': round(pnl, 4),
-            'pnl_percent': pnl_percent
-        }
-    except:
-        return None
-
-def close_current_position():
-    if not active_symbol:
-        return
-    try:
-        positions = session.get_positions(category='linear', symbol=active_symbol)['result']['list']
-        if not positions:
-            return
-        pos = positions[0]
-        side = pos['side']
-        size = float(pos['size'])
-        if size == 0:
-            return
-        opposite = 'Sell' if side == 'Buy' else 'Buy'
-        session.place_order(
-            category='linear',
-            symbol=active_symbol,
-            side=opposite,
-            order_type='Market',
-            qty=size,
-            time_in_force='GoodTillCancel',
-            reduce_only=True
-        )
-        send_telegram(f"❌ Позицію закрито ({side})")
-        time.sleep(2)  # затримка 2 секунди перед новою позицією
-    except Exception as e:
-        send_telegram(f"‼️ Помилка закриття: {e}")
-
-def open_position(signal):
-    if not active_symbol:
-        return
-    side = None
-    if active_symbol == 'DOGEUSDT':
-        if signal.upper() not in ['BUY', 'SELL']:
-            return
-        side = signal.capitalize()
-    else:  # SOL/WLD по цифрам
-        mapping = {'1': 'Buy', '2': 'Sell', '3': 'Buy', '4': 'Sell'}
-        if signal not in mapping:
-            return
-        side = mapping[signal]
-
-    try:
-        close_current_position()  # закриття старої позиції
-        order = session.place_order(
-            category='linear',
-            symbol=active_symbol,
-            side=side,
-            order_type='Market',
-            qty=QTY,
-            time_in_force='GoodTillCancel',
-            reduce_only=False
-        )
-        order_id = order['result']['orderId']
-        send_telegram(f"✅ Відкрито {side} на {QTY} {active_symbol}")
-
-        avg_price = None
-        for _ in range(10):
-            orders = session.get_order_history(category='linear', symbol=active_symbol)['result']['list']
-            for ord in orders:
-                if ord['orderId'] == order_id and ord['orderStatus'] == 'Filled':
-                    avg_price = float(ord.get('avgPrice', 0))
-                    break
-            if avg_price and avg_price > 0:
-                break
-            time.sleep(1)
-
-        if avg_price:
-            sl = round_tick(avg_price * (1 - STOP_PERCENT / 100)) if side == 'Buy' else round_tick(avg_price * (1 + STOP_PERCENT / 100))
-            session.set_trading_stop(
-                category='linear',
-                symbol=active_symbol,
-                stopLoss=sl
-            )
-            send_telegram(f"📉 Стоп-лосс встановлено на {sl}")
-        else:
-            send_telegram("⚠️ Не вдалося отримати avgPrice — стоп-лосс не встановлено")
-    except Exception as e:
-        send_telegram(f"‼️ Помилка відкриття позиції: {e}")
+# === Функції ===
+def send_telegram(message):
+    url = f'https://api.telegram.org/bot{BOT_TOKEN}/sendMessage'
+    data = {'chat_id': CHAT_ID, 'text': message, 'parse_mode': 'Markdown'}
+    requests.post(url, data=data)
 
 def status_report():
-    if not active_symbol:
+    global last_log_time
+    if not selected_coin:
+        send_telegram("🚫 Бот не торгує. Монета не обрана.")
         return
-    msg = "📊 *Статус бота*\n✅ Активний\n\n"
-    balance = get_total_balance()
-    msg += f"💰 Баланс: {balance} USDT\n" if balance is not None else "💰 Баланс: ?\n"
-    msg += f"⚙️ QTY: {QTY} {active_symbol}\n\n"
-    pos = get_position_info()
-    if pos:
-        msg += f"📌 Позиція: *{pos['side']}* {pos['size']} {active_symbol}\n"
-        msg += f"🎯 Ціна входу: {pos['entry_price']}\n"
-        msg += f"📈 Поточна: {pos['mark_price']}\n"
-        msg += f"📉 Стоп-лосс: {pos['stop_loss']}\n"
-        msg += f"📊 PnL: {pos['pnl_usdt']} USDT ({pos['pnl_percent']}%)\n"
-    else:
-        msg += "📌 Позиція: немає відкритої\n"
-    send_telegram(msg)
+    try:
+        balance = client.get_wallet_balance(coin="USDT")['result']['USDT']['wallet_balance']
+        positions = client.get_position_list(symbol=selected_coin)['result']
+        msg = f"📊 *Статус бота*\n✅ Активний\n💰 Баланс: {balance} USDT\n"
+        if positions:
+            pos = positions[0]
+            msg += f"📌 Позиція: {pos['side']} {pos['size']} {selected_coin}\n🎯 Ціна входу: {pos['entry_price']}\n📉 Стоп-лосс: {pos['stop_loss']}\n"
+        else:
+            msg += "📌 Позиція: немає\n"
+        send_telegram(msg)
+        last_log_time = datetime.now()
+    except Exception as e:
+        send_telegram(f"⚠️ Статус не отримано: {e}")
 
-def check_email_loop():
-    while True:
-        if not active_symbol:
-            time.sleep(CHECK_DELAY)
-            continue
-        try:
-            with IMAPClient(IMAP_SERVER) as client:
-                client.login(EMAIL, EMAIL_PASSWORD)
-                client.select_folder('INBOX')
-                messages = client.search(['UNSEEN'])
-                for msgid, data in client.fetch(messages, ['BODY[]']).items():
-                    email_message = pyzmail.PyzMessage.factory(data[b'BODY[]'])
-                    text = ''
-                    if email_message.text_part:
-                        text = email_message.text_part.get_payload().decode(email_message.text_part.charset)
-                    elif email_message.html_part:
-                        text = email_message.html_part.get_payload().decode(email_message.html_part.charset)
-                    text = text.strip()
-                    if text:
-                        open_position(text)
-                client.logout()
-        except Exception as e:
-            send_telegram(f"‼️ Помилка читання пошти: {e}")
-        time.sleep(CHECK_DELAY)
+def open_position(signal):
+    global selected_coin
+    if not trading_enabled or not selected_coin:
+        return
+    try:
+        current_positions = client.get_position_list(symbol=selected_coin)['result']
+        if current_positions:
+            current_side = current_positions[0]['side']
+            if (signal == 'Buy' and current_side == 'Sell') or (signal == 'Sell' and current_side == 'Buy'):
+                close_position(selected_coin)
+                time.sleep(DELAY_BETWEEN_CLOSE_OPEN)
+        qty = COINS[selected_coin]['qty']
+        client.place_active_order(
+            symbol=selected_coin,
+            side=signal,
+            order_type='Market',
+            qty=qty,
+            time_in_force='PostOnly',
+            reduce_only=False
+        )
+        send_telegram(f"✅ Відкрито {signal} позицію на {selected_coin}, qty={qty}")
+    except Exception as e:
+        send_telegram(f"⚠️ Помилка відкриття позиції: {e}")
 
-def status_loop():
-    while True:
-        if active_symbol:
-            status_report()
-        time.sleep(STATUS_DELAY)
+def close_position(symbol):
+    try:
+        positions = client.get_position_list(symbol=symbol)['result']
+        if positions:
+            side = positions[0]['side']
+            qty = positions[0]['size']
+            opposite_side = 'Sell' if side == 'Buy' else 'Buy'
+            client.place_active_order(
+                symbol=symbol,
+                side=opposite_side,
+                order_type='Market',
+                qty=qty,
+                time_in_force='PostOnly',
+                reduce_only=True
+            )
+            send_telegram(f"🛑 Закрито {side} позицію на {symbol}")
+    except Exception as e:
+        send_telegram(f"⚠️ Помилка закриття: {e}")
 
-# === Telegram меню ===
+def check_mail():
+    global selected_coin
+    if not selected_coin or not trading_enabled:
+        return None
+    try:
+        with IMAPClient(IMAP_SERVER, ssl=True) as mail_client:
+            mail_client.login(EMAIL, EMAIL_PASSWORD)
+            mail_client.select_folder('INBOX')
+            messages = mail_client.search(['UNSEEN'])
+            for uid in messages:
+                raw_message = mail_client.fetch([uid], ['BODY[]', 'FLAGS'])
+                message = pyzmail.PyzMessage.factory(raw_message[uid][b'BODY[]'])
+                if message.text_part:
+                    body = message.text_part.get_payload().decode(message.text_part.charset)
+                    if selected_coin == 'DOGEUSDT':
+                        if 'BUY' in body.upper():
+                            return 'Buy'
+                        elif 'SELL' in body.upper():
+                            return 'Sell'
+                    else:
+                        if '1' in body:
+                            return 'Buy'
+                        elif '2' in body:
+                            return 'Sell'
+                        elif '3' in body:
+                            return 'Buy'
+                        elif '4' in body:
+                            return 'Sell'
+    except Exception as e:
+        send_telegram(f"⚠️ Помилка читання пошти: {e}")
+    return None
+
+# === Telegram кнопки ===
 def start(update: Update, context: CallbackContext):
     keyboard = [
-        ['SOLUSDT', 'WLDUSDT', 'DOGEUSDT'],
-        ['Статус бота', 'Очистити'],
-        ['QTY +50', 'QTY -50'],
-        ['STOP +0.5%', 'STOP -0.5%']
+        [InlineKeyboardButton("SOLUSDT", callback_data='SOLUSDT')],
+        [InlineKeyboardButton("WLDUSDT", callback_data='WLDUSDT')],
+        [InlineKeyboardButton("DOGEUSDT", callback_data='DOGEUSDT')],
+        [InlineKeyboardButton("Очистити", callback_data='CLEAR')]
     ]
-    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-    update.message.reply_text("Виберіть опцію:", reply_markup=reply_markup)
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    update.message.reply_text('Виберіть монету для торгівлі:', reply_markup=reply_markup)
 
-def handle_message(update: Update, context: CallbackContext):
-    global active_symbol, QTY, STOP_PERCENT
-    text = update.message.text.strip()
+def button(update: Update, context: CallbackContext):
+    global selected_coin, trading_enabled
+    query = update.callback_query
+    query.answer()
+    if query.data == 'CLEAR':
+        selected_coin = None
+        trading_enabled = False
+        query.edit_message_text(text="🚫 Торгівля зупинена.")
+    else:
+        selected_coin = query.data
+        trading_enabled = True
+        query.edit_message_text(text=f"✅ Обрана монета: {selected_coin}")
 
-    if text in ['SOLUSDT', 'WLDUSDT', 'DOGEUSDT']:
-        active_symbol = text
-        update.message.reply_text(f"✅ Обрана монета: {active_symbol}")
-    elif text == 'Очистити':
-        active_symbol = None
-        update.message.reply_text("🛑 Торгівля та статус призупинені")
-    elif text == 'Статус бота':
-        status_report()
-    elif text == 'QTY +50':
-        QTY += 50
-        update.message.reply_text(f"⚙️ QTY: {QTY}")
-    elif text == 'QTY -50':
-        QTY = max(1, QTY - 50)
-        update.message.reply_text(f"⚙️ QTY: {QTY}")
-    elif text == 'STOP +0.5%':
-        STOP_PERCENT += 0.5
-        update.message.reply_text(f"📉 STOP: {STOP_PERCENT}%")
-    elif text == 'STOP -0.5%':
-        STOP_PERCENT = max(0.1, STOP_PERCENT - 0.5)
-        update.message.reply_text(f"📉 STOP: {STOP_PERCENT}%")
+def run_telegram_bot():
+    updater = Updater(BOT_TOKEN)
+    updater.dispatcher.add_handler(CommandHandler('start', start))
+    updater.dispatcher.add_handler(CallbackQueryHandler(button))
+    updater.start_polling()
+    return updater
 
-# === Запуск Telegram бота ===
-updater = Updater(BOT_TOKEN)
-updater.dispatcher.add_handler(CommandHandler('start', start))
-updater.dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
+# === Фоновий потік для торгівлі ===
+def trading_loop():
+    global last_log_time
+    while True:
+        try:
+            now = datetime.now()
+            if (now - last_log_time).total_seconds() >= LOG_INTERVAL:
+                status_report()
+            signal = check_mail()
+            if signal:
+                open_position(signal)
+        except Exception as e:
+            send_telegram(f"⚠️ Помилка фонового циклу: {e}")
+        time.sleep(CHECK_DELAY)
 
-# === Запуск потоків для email та статусу ===
-threading.Thread(target=check_email_loop, daemon=True).start()
-threading.Thread(target=status_loop, daemon=True).start()
-
-# === Старт бота ===
-updater.start_polling()
-updater.idle()
+if __name__ == '__main__':
+    updater = run_telegram_bot()
+    thread = threading.Thread(target=trading_loop, daemon=True)
+    thread.start()
+    updater.idle()
