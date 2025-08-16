@@ -31,11 +31,26 @@ order_qty = QTY
 last_qty_sent = None
 waiting_for_qty = False  # очікуємо введення нової суми
 
-# === Функції ===
+# === Допоміжні функції ===
 def round_tick(value):
     return round(value, 6)
 
-def send_telegram(message, keyboard=None):
+def send_telegram(message):
+    try:
+        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+        payload = {'chat_id': CHAT_ID, 'text': message, 'parse_mode': 'Markdown'}
+        requests.post(url, data=payload)
+    except Exception as e:
+        print("‼️ Telegram error:", e)
+
+def is_number(s):
+    try:
+        float(s.strip().replace(",", "."))
+        return True
+    except:
+        return False
+
+def send_telegram_with_keyboard(message, keyboard=None):
     try:
         url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
         payload = {'chat_id': CHAT_ID, 'text': message, 'parse_mode': 'Markdown'}
@@ -45,28 +60,103 @@ def send_telegram(message, keyboard=None):
     except Exception as e:
         print("‼️ Telegram error:", e)
 
-def set_order_qty(new_qty):
-    global order_qty, last_qty_sent
-    order_qty = new_qty
-    if last_qty_sent != order_qty:
-        send_telegram(f"✅ Сума ордера змінена на {order_qty} {SYMBOL}", keyboard={"remove_keyboard": True})
-        last_qty_sent = order_qty
-
-def is_number(s):
-    try:
-        float(s.replace(",", "."))
-        return True
-    except:
-        return False
-
 def show_keyboard():
     keyboard = {
         "keyboard": [["💰 Змінити суму DOGE"]],
         "one_time_keyboard": True,
         "resize_keyboard": True
     }
-    send_telegram("Виберіть дію:", keyboard=keyboard)
+    send_telegram_with_keyboard("Виберіть дію:", keyboard=keyboard)
 
+def set_order_qty(new_qty):
+    global order_qty, last_qty_sent
+    order_qty = new_qty
+    if last_qty_sent != order_qty:
+        send_telegram(f"✅ Сума ордера змінена на {order_qty} {SYMBOL}")
+        last_qty_sent = order_qty
+
+# === Функції для Bybit ===
+def get_position_info():
+    try:
+        positions = session.get_positions(category='linear', symbol=SYMBOL)['result']['list']
+        if not positions:
+            return None
+        pos = positions[0]
+        size = abs(float(pos.get('size', 0)))
+        if size == 0:
+            return None
+        side = pos.get('side', 'Unknown')
+        entry_price = None
+        for key in ['entryPrice', 'avgEntryPrice', 'avgPrice']:
+            val = pos.get(key)
+            if val not in [None, '', '0', 0]:
+                try:
+                    entry_price = float(val)
+                    break
+                except:
+                    continue
+        if entry_price is None:
+            entry_price = 0.0
+        stop_loss = pos.get('stopLoss')
+        if stop_loss in [None, 0, '0', '']:
+            stop_loss = '—'
+        else:
+            try:
+                stop_loss = float(stop_loss)
+            except:
+                stop_loss = '—'
+        mark_price = None
+        try:
+            mark_price = float(pos.get('markPrice', 0))
+        except:
+            mark_price = 0.0
+        if entry_price == 0.0 or mark_price == 0.0:
+            pnl_usdt = 0.0
+            pnl_percent = 0.0
+        else:
+            pnl_usdt = (mark_price - entry_price) * size if side == 'Buy' else (entry_price - mark_price) * size
+            pnl_percent = (pnl_usdt / (entry_price * size)) * 100 if (entry_price * size) != 0 else 0
+        return {
+            'side': side,
+            'size': size,
+            'entry_price': round_tick(entry_price),
+            'mark_price': round_tick(mark_price),
+            'stop_loss': stop_loss,
+            'pnl_usdt': round(pnl_usdt, 3),
+            'pnl_percent': round(pnl_percent, 2)
+        }
+    except Exception as e:
+        print("‼️ Помилка позиції:", e)
+        return None
+
+def get_total_balance():
+    try:
+        balances = session.get_wallet_balance(accountType="UNIFIED")["result"]["list"]
+        for acc in balances:
+            if acc["accountType"] == "UNIFIED":
+                usdt_balance = float(acc["totalEquity"])
+                return round(usdt_balance, 2)
+    except Exception as e:
+        print("‼️ Помилка балансу:", e)
+    return None
+
+def status_report():
+    msg = "📊 *Статус бота*\n✅ Активний\n\n"
+    balance = get_total_balance()
+    msg += f"💰 Баланс: {balance} USDT\n\n" if balance is not None else "💰 Баланс: ?\n\n"
+    pos = get_position_info()
+    if pos:
+        msg += f"📌 Позиція: *{pos['side']}* {pos['size']} {SYMBOL}\n"
+        msg += f"🎯 Ціна входу: {pos['entry_price']}\n"
+        msg += f"📈 Поточна: {pos['mark_price']}\n"
+        msg += f"📉 Стоп-лосс: {pos['stop_loss']}\n"
+        msg += f"📊 PnL: {pos['pnl_usdt']} USDT ({pos['pnl_percent']}%)\n"
+    else:
+        msg += "📌 Позиція: немає відкритої\n"
+    msg += f"\n💵 Поточна сума ордера: {order_qty} {SYMBOL}"
+    send_telegram(msg)
+
+# === Telegram команди з клавіатури ===
 def check_telegram_commands():
     global waiting_for_qty
     try:
@@ -78,7 +168,7 @@ def check_telegram_commands():
             chat_id = msg.get('chat', {}).get('id')
             text = msg.get('text', '')
 
-            if str(chat_id) != str(CHAT_ID):
+            if chat_id != int(CHAT_ID):
                 continue
 
             if waiting_for_qty:
@@ -87,46 +177,28 @@ def check_telegram_commands():
                     set_order_qty(float(cleaned_text))
                     waiting_for_qty = False
                 else:
-                    send_telegram("‼️ Введи тільки число, будь ласка:")
+                    send_telegram_with_keyboard("‼️ Введи тільки число, будь ласка:")
                 continue
 
             if text == "💰 Змінити суму DOGE":
-                send_telegram("Введи нову суму ордера в DOGE:")
+                send_telegram_with_keyboard("Введи нову суму ордера (число):")
                 waiting_for_qty = True
-
-# --- Всі інші функції get_position_info(), get_total_balance(), status_report(), close_current_position(), open_position(), get_current_position_side(), check_mail() залишаються без змін ---
 
 # === Основний цикл ===
 print("🟢 Бот запущено. Очікую сигнали...")
 send_telegram("🟢 Бот запущено. Очікую сигнали...")
-show_keyboard()
 
 last_log_time = datetime.now() - timedelta(minutes=LOG_INTERVAL_MINUTES)
 
 while True:
     try:
         now = datetime.now()
-        # Лог статусу
         if (now - last_log_time).total_seconds() >= LOG_INTERVAL_MINUTES * 60:
             status_report()
             last_log_time = now
 
         check_telegram_commands()
-
-        signal = check_mail()
-        if signal:
-            print(f"\n📩 Сигнал з пошти: {signal}")
-            send_telegram(f"📩 Отримано сигнал з пошти: {signal}")
-
-            current = get_current_position_side()
-            if current is None:
-                open_position(signal)
-            elif (current == 'Buy' and signal == 'SELL') or (current == 'Sell' and signal == 'BUY'):
-                close_current_position()
-                time.sleep(2)
-                open_position(signal)
-            else:
-                print("⏸️ Позиція вже відкрита правильно")
+        # Тут маєш вставити решту логіки відкриття/закриття позицій та обробки сигналів з пошти
 
         time.sleep(CHECK_DELAY)
     except Exception as e:
