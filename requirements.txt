@@ -1,7 +1,6 @@
-python-telegram-bot==20.4
-pybit==2.1.0
-imapclient==2.3.2
-pyzmail36==1.0.4
-requests==2.31.0
-beautifulsoup4==4.12.2
-
+pybit
+requests
+python-telegram-bot==13.17
+imapclient
+pyzmail36
+beautifulsoup4
