@@ -14,19 +14,23 @@ IMAP_SERVER = 'imap.gmail.com'
 API_KEY = 'm4qlJh0Vec5PzYjHiC'
 API_SECRET = 'bv4MJZaIOkV3SSBbiH7ugxqyjDww4CEUTp54'
 SYMBOL = 'DOGEUSDT'
-QTY = 750   # стартова кількість
+QTY = 750
 STOP_PERCENT = 3.7
 CHECK_DELAY = 20
 
 # === Telegram ===
 BOT_TOKEN = '7844283362:AAHuxfe22q3K0uvtGcrcgm6iqOEqduU9r-k'
 CHAT_ID = '5369718011'
-LOG_INTERVAL_MINUTES = 1   # тепер звіт кожну 1 хв
+LOG_INTERVAL_MINUTES = 1  # звіт кожну 1 хвилину
 
 session = HTTP(api_key=API_KEY, api_secret=API_SECRET, recv_window=10000)
 
+last_update_id = 0  # щоб уникнути спаму від Telegram
+
+
 def round_tick(value):
     return round(value, 6)
+
 
 def send_telegram(message):
     try:
@@ -36,34 +40,6 @@ def send_telegram(message):
     except Exception as e:
         print("‼️ Telegram error:", e)
 
-# === NEW: перевірка команд у Telegram ===
-def check_telegram_commands():
-    global QTY
-    try:
-        url = f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates"
-        response = requests.get(url).json()
-
-        if "result" not in response:
-            return
-
-        for update in response["result"]:
-            if "message" in update and "text" in update["message"]:
-                chat_id = str(update["message"]["chat"]["id"])
-                text = update["message"]["text"].strip()
-
-                if chat_id == CHAT_ID:  # приймаємо тільки від твого чату
-                    if text.startswith("/qty"):
-                        try:
-                            new_qty = int(text.split()[1])
-                            QTY = new_qty
-                            send_telegram(f"🔄 Кількість оновлено: {QTY} {SYMBOL}")
-                        except:
-                            send_telegram("⚠️ Використовуй команду так: /qty 1000")
-
-                    elif text.startswith("/status"):   # 📌 нова команда
-                        status_report()
-    except Exception as e:
-        print("‼️ Telegram command error:", e)
 
 def get_position_info():
     try:
@@ -125,6 +101,7 @@ def get_position_info():
         print("‼️ Помилка позиції:", e)
         return None
 
+
 def get_total_balance():
     try:
         balances = session.get_wallet_balance(accountType="UNIFIED")["result"]["list"]
@@ -135,6 +112,7 @@ def get_total_balance():
     except Exception as e:
         print("‼️ Помилка балансу:", e)
     return None
+
 
 def status_report():
     msg = "📊 *Статус бота*\n"
@@ -154,6 +132,7 @@ def status_report():
     else:
         msg += "📌 Позиція: немає відкритої\n"
     send_telegram(msg)
+
 
 def close_current_position():
     try:
@@ -182,6 +161,7 @@ def close_current_position():
     except Exception as e:
         print("‼️ Помилка закриття:", e)
         send_telegram(f"‼️ Помилка закриття: {e}")
+
 
 def open_position(signal):
     side = 'Buy' if signal == 'BUY' else 'Sell'
@@ -228,6 +208,7 @@ def open_position(signal):
         print("‼️ Помилка відкриття позиції:", e)
         send_telegram(f"‼️ Помилка відкриття позиції: {e}")
 
+
 def get_current_position_side():
     try:
         positions = session.get_positions(category='linear', symbol=SYMBOL)['result']['list']
@@ -239,6 +220,7 @@ def get_current_position_side():
         print("‼️ Помилка отримання позиції:", e)
         send_telegram(f"‼️ Помилка отримання позиції: {e}")
         return None
+
 
 def check_mail():
     with IMAPClient(IMAP_SERVER, ssl=True) as client:
@@ -267,6 +249,38 @@ def check_mail():
                 return 'SELL'
     return None
 
+
+# === Telegram: перевірка команд ===
+def check_telegram_commands():
+    global QTY, last_update_id
+    try:
+        url = f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates?offset={last_update_id+1}"
+        response = requests.get(url).json()
+
+        if "result" not in response:
+            return
+
+        for update in response["result"]:
+            last_update_id = update["update_id"]
+            if "message" in update and "text" in update["message"]:
+                chat_id = str(update["message"]["chat"]["id"])
+                text = update["message"]["text"].strip()
+
+                if chat_id == CHAT_ID:
+                    if text.startswith("/qty"):
+                        try:
+                            new_qty = int(text.split()[1])
+                            QTY = new_qty
+                            send_telegram(f"🔄 Кількість оновлено: {QTY} {SYMBOL}")
+                        except:
+                            send_telegram("⚠️ Використовуй команду так: /qty 1000")
+
+                    elif text.startswith("/status"):
+                        status_report()
+    except Exception as e:
+        print("‼️ Telegram command error:", e)
+
+
 # === Основний цикл ===
 print("🟢 Бот запущено. Очікую сигнали...")
 send_telegram("🟢 Бот запущено. Очікую сигнали...")
@@ -277,10 +291,10 @@ while True:
     try:
         now = datetime.now()
 
-        # Перевірка Telegram команд
+        # перевірка команд з Telegram
         check_telegram_commands()
 
-        # Статус бота в Telegram кожну хвилину
+        # статус кожну хвилину
         if (now - last_log_time).total_seconds() >= LOG_INTERVAL_MINUTES * 60:
             status_report()
             last_log_time = now
