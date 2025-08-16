@@ -1,4 +1,5 @@
 import time
+import asyncio
 import threading
 from pybit.unified_trading import HTTP
 import requests
@@ -7,7 +8,7 @@ from imapclient import IMAPClient
 import pyzmail
 from bs4 import BeautifulSoup
 from telegram import Update
-from telegram.ext import Updater, CommandHandler, CallbackContext
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
 # === Налаштування ===
 EMAIL = 'tradebotv1@gmail.com'
@@ -30,12 +31,10 @@ CHAT_ID = '5369718011'
 
 # Інші параметри
 CHECK_DELAY = 20
-status_thread = None
 active_symbol = None
 
 # === Підключення до Bybit ===
-session = HTTP(endpoint="https://api.bybit.com", api_key=API_KEY, api_secret=API_SECRET)
-
+session = HTTP(api_key=API_KEY, api_secret=API_SECRET)
 
 # === Telegram функції ===
 def send_telegram(text):
@@ -43,7 +42,6 @@ def send_telegram(text):
     requests.post(url, data={'chat_id': CHAT_ID, 'text': text, 'parse_mode': 'Markdown'})
 
 
-# === Позиції ===
 def round_tick(value, tick_size=0.0001):
     return round(round(value / tick_size) * tick_size, 8)
 
@@ -163,7 +161,6 @@ def close_current_position(symbol):
         send_telegram(f"‼️ Помилка закриття: {e}")
 
 
-# === Перевірка пошти для сигналів ===
 def check_mail(symbol):
     try:
         with IMAPClient(IMAP_SERVER, ssl=True) as client:
@@ -190,7 +187,6 @@ def check_mail(symbol):
     return None
 
 
-# === Авто-статус та сигнали ===
 def periodic_status():
     while True:
         if active_symbol:
@@ -209,51 +205,51 @@ def periodic_status():
 
 
 # === Telegram команди ===
-def set_active_symbol(symbol_name):
+async def cmd_sol(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global active_symbol
-    active_symbol = symbol_name
-    send_telegram(f"✅ Активна монета: {symbol_name}")
+    active_symbol = 'SOLUSDT'
+    await update.message.reply_text(f"✅ Активна монета: SOLUSDT")
 
 
-def cmd_sol(update: Update, context: CallbackContext):
-    set_active_symbol('SOLUSDT')
+async def cmd_wld(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global active_symbol
+    active_symbol = 'WLDUSDT'
+    await update.message.reply_text(f"✅ Активна монета: WLDUSDT")
 
 
-def cmd_wld(update: Update, context: CallbackContext):
-    set_active_symbol('WLDUSDT')
+async def cmd_doge(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global active_symbol
+    active_symbol = 'DOGEUSDT'
+    await update.message.reply_text(f"✅ Активна монета: DOGEUSDT")
 
 
-def cmd_doge(update: Update, context: CallbackContext):
-    set_active_symbol('DOGEUSDT')
-
-
-def cmd_clear(update: Update, context: CallbackContext):
+async def cmd_clear(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global active_symbol
     active_symbol = None
-    send_telegram("❌ Всі розсилки статусу зупинено")
+    await update.message.reply_text("❌ Всі розсилки статусу зупинено")
 
 
-def cmd_status(update: Update, context: CallbackContext):
+async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if active_symbol:
         status_report(active_symbol)
+        await update.message.reply_text(f"Статус надіслано в Telegram")
     else:
-        send_telegram("❌ Активна монета не обрана")
+        await update.message.reply_text("❌ Активна монета не обрана")
 
 
 def main():
-    updater = Updater(BOT_TOKEN)
-    dp = updater.dispatcher
-    dp.add_handler(CommandHandler('sol', cmd_sol))
-    dp.add_handler(CommandHandler('wld', cmd_wld))
-    dp.add_handler(CommandHandler('doge', cmd_doge))
-    dp.add_handler(CommandHandler('clear', cmd_clear))
-    dp.add_handler(CommandHandler('status', cmd_status))
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
+
+    app.add_handler(CommandHandler("sol", cmd_sol))
+    app.add_handler(CommandHandler("wld", cmd_wld))
+    app.add_handler(CommandHandler("doge", cmd_doge))
+    app.add_handler(CommandHandler("clear", cmd_clear))
+    app.add_handler(CommandHandler("status", cmd_status))
 
     threading.Thread(target=periodic_status, daemon=True).start()
 
     print("🤖 Бот запущено")
-    updater.start_polling()
-    updater.idle()
+    app.run_polling()
 
 
 if __name__ == "__main__":
