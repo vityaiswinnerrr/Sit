@@ -35,7 +35,11 @@ status_thread = None
 active_symbol = None
 
 # === Підключення до Bybit ===
-session = HTTP(endpoint="https://api.bybit.com", api_key=API_KEY, api_secret=API_SECRET, recv_window=10000)
+session = HTTP(
+    api_key=API_KEY,
+    api_secret=API_SECRET,
+    recv_window=10000
+)
 
 # === Функції Telegram ===
 def send_telegram(text):
@@ -86,8 +90,7 @@ def get_total_balance():
 
 def status_report(symbol):
     info = symbols[symbol]
-    msg = f"📊 *Статус {symbol}*\n"
-    msg += "✅ Активний\n\n"
+    msg = f"📊 *Статус {symbol}*\n✅ Активний\n\n"
     balance = get_total_balance()
     msg += f"💰 Баланс: {balance} USDT\n" if balance else "💰 Баланс: ?\n"
     msg += f"⚙️ QTY: {info['qty']} {symbol}\n\n"
@@ -104,21 +107,18 @@ def status_report(symbol):
 
 def open_position(symbol, signal):
     info = symbols[symbol]
-    if symbol in ['SOLUSDT', 'WLDUSDT']:
-        # Використовуємо сигнали довгий/короткий відповідно до налаштувань
-        if signal.isdigit():
-            num_signal = int(signal)
-            if num_signal == info['signals']['long']:
-                action = 'BUY'
-            elif num_signal == info['signals']['short']:
-                action = 'SELL'
-            else:
-                print(f"⚠️ Сигнал {num_signal} не відповідає {symbol}")
-                return
-        else:
-            action = 'BUY' if signal.upper() == 'BUY' else 'SELL'
+    action = None
+    if signal.isdigit():
+        num_signal = int(signal)
+        if num_signal == info['signals']['long']:
+            action = 'BUY'
+        elif num_signal == info['signals']['short']:
+            action = 'SELL'
     else:
         action = 'BUY' if signal.upper() == 'BUY' else 'SELL'
+    if not action:
+        print(f"⚠️ Сигнал {signal} не відповідає {symbol}")
+        return
 
     side = 'Buy' if action == 'BUY' else 'Sell'
     try:
@@ -135,6 +135,7 @@ def open_position(symbol, signal):
         print(f"✅ Відкрито {side} на {info['qty']} {symbol} (orderId: {order_id})")
         send_telegram(f"✅ Відкрито {side} на {info['qty']} {symbol}")
 
+        # Встановлюємо стоп-лосс
         avg_price = None
         for _ in range(10):
             orders = session.get_order_history(category='linear', symbol=symbol)['result']['list']
@@ -200,14 +201,12 @@ def check_mail():
                 body = msg.text_part.get_payload().decode(msg.text_part.charset)
             elif msg.html_part:
                 html = msg.html_part.get_payload().decode(msg.html_part.charset)
-                soup = BeautifulSoup(html, 'html.parser')
-                body = soup.get_text()
+                body = BeautifulSoup(html, 'html.parser').get_text()
             body = body.upper().strip()[:900]
             client.add_flags(uid, '\\Seen')
             return body
     return None
 
-# === Основний цикл для перевірки пошти ===
 def mail_loop():
     while True:
         try:
