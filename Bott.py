@@ -13,9 +13,9 @@ IMAP_SERVER = 'imap.gmail.com'
 
 API_KEY = 'm4qlJh0Vec5PzYjHiC'
 API_SECRET = 'bv4MJZaIOkV3SSBbiH7ugxqyjDww4CEUTp54'
-SYMBOL = 'DOGEUSDT'
-QTY = 750
-STOP_PERCENT = 3.7
+SYMBOL = 'SOLUSDT'
+QTY = 0.03
+STOP_PERCENT = 2.5
 CHECK_DELAY = 20
 
 # === Telegram ===
@@ -241,10 +241,10 @@ def check_mail():
 
             body = body.upper()[:900]
 
-            if 'BUY' in body:
+            if '1' in body:
                 client.add_flags(uid, '\\Seen')
                 return 'BUY'
-            elif 'SELL' in body:
+            elif '2' in body:
                 client.add_flags(uid, '\\Seen')
                 return 'SELL'
     return None
@@ -269,11 +269,11 @@ def check_telegram_commands():
                 if chat_id == CHAT_ID:
                     if text.startswith("/qty"):
                         try:
-                            new_qty = int(text.split()[1])
+                            new_qty = float(text.split()[1])
                             QTY = new_qty
                             send_telegram(f"🔄 Кількість оновлено: {QTY} {SYMBOL}")
                         except:
-                            send_telegram("⚠️ Використовуй команду так: /qty 1000")
+                            send_telegram("⚠️ Використовуй команду так: /qty 0.05")
 
                     elif text.startswith("/status"):
                         status_report()
