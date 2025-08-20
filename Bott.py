@@ -205,13 +205,13 @@ def make_status():
                 )
             else:
                 msg += (
-                    f"📊 *{symbol}*\n"
+                    f"*{symbol}*\n"
                     f"✅ Активний\n\n"
                     f"QTY: {qty} {symbol}\n"
                     f"📌 Позицій немає\n\n"
                 )
         else:
-            msg += f"📊 *{symbol}*\n❌ Виключено\n\n"
+            msg += f"*{symbol}*\n❌ Виключено\n\n"
 
     return msg
 
