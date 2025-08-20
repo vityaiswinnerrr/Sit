@@ -7,8 +7,8 @@ import requests
 from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
-    ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes,
-    CallbackQueryHandler, filters
+    ApplicationBuilder, CommandHandler, ContextTypes,
+    CallbackQueryHandler
 )
 import asyncio
 
@@ -40,13 +40,14 @@ qty_map = {
 session = HTTP(api_key=API_KEY, api_secret=API_SECRET, recv_window=10000)
 
 # === Допоміжні ===
-def round_tick(value): return round(value, 6)
+def round_tick(value): 
+    return round(value, 6)
 
-def send_telegram(message):
+async def send_telegram(message):
     try:
         url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
         payload = {'chat_id': CHAT_ID, 'text': message, 'parse_mode': 'Markdown'}
-        requests.post(url, data=payload)
+        await asyncio.to_thread(requests.post, url, data=payload)
     except Exception as e:
         print("‼️ Telegram error:", e)
 
@@ -82,7 +83,7 @@ def get_total_balance():
     except:
         return None
 
-def open_position(symbol, side):
+async def open_position(symbol, side):
     try:
         qty = qty_map[symbol]
         order = session.place_order(
@@ -93,16 +94,16 @@ def open_position(symbol, side):
             qty=qty,
             time_in_force='GoodTillCancel'
         )
-        send_telegram(f"✅ Відкрито {side} на {qty} {symbol}")
+        await send_telegram(f"✅ Відкрито {side} на {qty} {symbol}")
         avg_price = float(order['result'].get('avgPrice', 0) or 0)
         if avg_price:
             sl = round_tick(avg_price * (1 - STOP_PERCENT[symbol] / 100)) if side == 'Buy' else round_tick(avg_price * (1 + STOP_PERCENT[symbol] / 100))
             session.set_trading_stop(category='linear', symbol=symbol, stopLoss=sl)
-            send_telegram(f"📉 Стоп-лосс {symbol}: {sl}")
+            await send_telegram(f"📉 Стоп-лосс {symbol}: {sl}")
     except Exception as e:
-        send_telegram(f"‼️ Помилка відкриття {symbol}: {e}")
+        await send_telegram(f"‼️ Помилка відкриття {symbol}: {e}")
 
-def close_position(symbol):
+async def close_position(symbol):
     try:
         positions = session.get_positions(category='linear', symbol=symbol)['result']['list']
         if not positions: return
@@ -113,11 +114,11 @@ def close_position(symbol):
         opposite = 'Sell' if side == 'Buy' else 'Buy'
         session.place_order(category='linear', symbol=symbol, side=opposite,
                             order_type='Market', qty=size, reduce_only=True)
-        send_telegram(f"❌ Закрито {symbol} ({side})")
+        await send_telegram(f"❌ Закрито {symbol} ({side})")
     except Exception as e:
-        send_telegram(f"‼️ Помилка закриття {symbol}: {e}")
+        await send_telegram(f"‼️ Помилка закриття {symbol}: {e}")
 
-def status_report():
+async def status_report():
     msg = "📊 *Статус бота*\n"
     balance = get_total_balance()
     msg += f"💰 Баланс: {balance} USDT\n\n"
@@ -129,30 +130,33 @@ def status_report():
             msg += f"📌 {sym}: {pos['side']} {pos['size']} @ {pos['entry_price']} → {pos['mark_price']}\nPnL: {pos['pnl_usdt']} USDT ({pos['pnl_percent']}%)\n\n"
         else:
             msg += f"📌 {sym}: немає відкритої позиції\n\n"
-    send_telegram(msg)
+    await send_telegram(msg)
 
 # === Пошта (сигнали) ===
 def check_mail():
-    with IMAPClient(IMAP_SERVER, ssl=True) as client:
-        client.login(EMAIL, EMAIL_PASSWORD)
-        client.select_folder('INBOX')
-        messages = client.search(['UNSEEN'])
-        for uid in messages:
-            raw = client.fetch([uid], ['BODY[]'])
-            msg = pyzmail.PyzMessage.factory(raw[uid][b'BODY[]'])
-            body = ""
-            if msg.text_part:
-                body = msg.text_part.get_payload().decode(msg.text_part.charset)
-            elif msg.html_part:
-                body = BeautifulSoup(msg.html_part.get_payload().decode(msg.html_part.charset), 'html.parser').get_text()
-            body = body.upper()[:900]
-            client.add_flags(uid, '\\Seen')
-            if 'BUY' in body: return ("DOGEUSDT", "Buy")
-            if 'SELL' in body: return ("DOGEUSDT", "Sell")
-            if '1' in body: return ("WLDUSDT", "Buy")
-            if '2' in body: return ("WLDUSDT", "Sell")
-            if '3' in body: return ("SOLUSDT", "Buy")
-            if '4' in body: return ("SOLUSDT", "Sell")
+    try:
+        with IMAPClient(IMAP_SERVER, ssl=True) as client:
+            client.login(EMAIL, EMAIL_PASSWORD)
+            client.select_folder('INBOX')
+            messages = client.search(['UNSEEN'])
+            for uid in messages:
+                raw = client.fetch([uid], ['BODY[]'])
+                msg = pyzmail.PyzMessage.factory(raw[uid][b'BODY[]'])
+                body = ""
+                if msg.text_part:
+                    body = msg.text_part.get_payload().decode(msg.text_part.charset)
+                elif msg.html_part:
+                    body = BeautifulSoup(msg.html_part.get_payload().decode(msg.html_part.charset), 'html.parser').get_text()
+                body = body.upper()[:900]
+                client.add_flags(uid, '\\Seen')
+                if 'BUY' in body: return ("DOGEUSDT", "Buy")
+                if 'SELL' in body: return ("DOGEUSDT", "Sell")
+                if '1' in body: return ("WLDUSDT", "Buy")
+                if '2' in body: return ("WLDUSDT", "Sell")
+                if '3' in body: return ("SOLUSDT", "Buy")
+                if '4' in body: return ("SOLUSDT", "Sell")
+    except Exception as e:
+        print("‼️ Mail check error:", e)
     return None
 
 # === Telegram меню ===
@@ -192,18 +196,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=main_menu()
         )
     elif data == "status":
-        status_report()
+        await status_report()
         await query.edit_message_text("📊 Статус відправлено у бот.", reply_markup=main_menu())
     elif data == "clear":
         active_symbols.clear()
         await query.edit_message_text("🧹 Всі монети очищено.", reply_markup=main_menu())
 
-# === Запуск бота ===
-app = ApplicationBuilder().token(BOT_TOKEN).build()
-app.add_handler(CommandHandler("start", start))
-app.add_handler(CallbackQueryHandler(button_handler))
-
-# цикл пошти + бот
+# === Основний цикл ===
 last_log_time = datetime.now() - timedelta(minutes=LOG_INTERVAL_MINUTES)
 async def main_loop():
     global last_log_time
@@ -212,24 +211,27 @@ async def main_loop():
             now = datetime.now()
             if (now - last_log_time).total_seconds() >= LOG_INTERVAL_MINUTES * 60:
                 if active_symbols:
-                    status_report()
+                    await status_report()
                 last_log_time = now
 
             signal = check_mail()
             if signal and signal[0] in active_symbols:
                 symbol, side = signal
-                send_telegram(f"📩 Сигнал: {symbol} {side}")
-                open_position(symbol, side)
+                await send_telegram(f"📩 Сигнал: {symbol} {side}")
+                await open_position(symbol, side)
 
             await asyncio.sleep(CHECK_DELAY)
         except Exception as e:
-            send_telegram(f"‼️ Глобальна помилка: {e}")
+            await send_telegram(f"‼️ Глобальна помилка: {e}")
             await asyncio.sleep(10)
+
+# === Запуск ===
+app = ApplicationBuilder().token(BOT_TOKEN).build()
+app.add_handler(CommandHandler("start", start))
+app.add_handler(CallbackQueryHandler(button_handler))
 
 async def run():
     await asyncio.gather(app.run_polling(), main_loop())
 
 print("🟢 Бот запущено. Очікую сигнали...")
-send_telegram("🟢 Бот запущено. Очікую сигнали...")
-
 asyncio.run(run())
