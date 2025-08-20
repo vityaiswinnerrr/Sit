@@ -1,6 +1,6 @@
 pybit
 requests
-python-telegram-bot==20.4
+python-telegram-bot==13.15
 imapclient
 pyzmail36
 beautifulsoup4
