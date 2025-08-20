@@ -5,8 +5,10 @@ from bs4 import BeautifulSoup
 from pybit.unified_trading import HTTP
 import requests
 from datetime import datetime, timedelta
-from telegram import Update, ReplyKeyboardMarkup
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
+from telegram import Update
+from telegram.ext import (
+    ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
+)
 
 # === Налаштування ===
 EMAIL = 'tradebotv1@gmail.com'
@@ -157,25 +159,26 @@ def check_mail():
     return None
 
 # === Telegram команди ===
-def help_cmd(update: Update, context: CallbackContext):
-    update.message.reply_text(
+async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
         "/help – список команд\n"
         "/status – статус бота\n"
         "/clear – вимкнути всі монети\n"
         "/qtydoge 500 – задати QTY DOGE\n"
         "/qtysol 400 – задати QTY SOL\n"
         "/qtywld 350 – задати QTY WLD\n"
-        "Вибір монет: натисни кнопку DOGE / SOL / WLD щоб увімкнути чи вимкнути монету"
+        "Вибір монет: напиши DOGE / SOL / WLD щоб увімкнути чи вимкнути монету"
     )
 
-def clear_cmd(update: Update, context: CallbackContext):
+async def clear_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     active_symbols.clear()
-    update.message.reply_text("⛔ Всі монети очищено. Бот виключено.")
+    await update.message.reply_text("⛔ Всі монети очищено. Бот виключено.")
 
-def status_cmd(update: Update, context: CallbackContext):
+async def status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     status_report()
+    await update.message.reply_text("✅ Статус відправлено у бот.")
 
-def qty_cmd(update: Update, context: CallbackContext):
+async def qty_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         text = update.message.text.split()
         cmd = text[0].lower()
@@ -183,54 +186,62 @@ def qty_cmd(update: Update, context: CallbackContext):
         if cmd == "/qtydoge": qty_map["DOGEUSDT"] = value
         if cmd == "/qtysol": qty_map["SOLUSDT"] = value
         if cmd == "/qtywld": qty_map["WLDUSDT"] = value
-        update.message.reply_text(f"✅ {cmd.upper()} встановлено {value}")
+        await update.message.reply_text(f"✅ {cmd.upper()} встановлено {value}")
     except:
-        update.message.reply_text("⚠️ Використання: /qtydoge 500")
+        await update.message.reply_text("⚠️ Використання: /qtydoge 500")
 
-def toggle_symbol(update: Update, context: CallbackContext):
+async def toggle_symbol(update: Update, context: ContextTypes.DEFAULT_TYPE):
     sym = update.message.text.upper() + "USDT"
     if sym in active_symbols:
         active_symbols.remove(sym)
-        update.message.reply_text(f"❌ {sym} виключено")
+        await update.message.reply_text(f"❌ {sym} виключено")
     else:
         active_symbols.add(sym)
-        update.message.reply_text(f"✅ {sym} включено")
+        await update.message.reply_text(f"✅ {sym} включено")
 
 def start_bot():
-    updater = Updater(BOT_TOKEN)
-    dp = updater.dispatcher
-    dp.add_handler(CommandHandler("help", help_cmd))
-    dp.add_handler(CommandHandler("clear", clear_cmd))
-    dp.add_handler(CommandHandler("status", status_cmd))
-    dp.add_handler(CommandHandler("qtydoge", qty_cmd))
-    dp.add_handler(CommandHandler("qtysol", qty_cmd))
-    dp.add_handler(CommandHandler("qtywld", qty_cmd))
-    dp.add_handler(MessageHandler(Filters.text(["DOGE","SOL","WLD"]), toggle_symbol))
-    updater.start_polling()
-    return updater
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
+
+    app.add_handler(CommandHandler("help", help_cmd))
+    app.add_handler(CommandHandler("clear", clear_cmd))
+    app.add_handler(CommandHandler("status", status_cmd))
+    app.add_handler(CommandHandler("qtydoge", qty_cmd))
+    app.add_handler(CommandHandler("qtysol", qty_cmd))
+    app.add_handler(CommandHandler("qtywld", qty_cmd))
+    app.add_handler(MessageHandler(filters.TEXT & filters.Regex("^(DOGE|SOL|WLD)$"), toggle_symbol))
+
+    return app
 
 # === Основний цикл ===
 print("🟢 Бот запущено. Очікую сигнали...")
 send_telegram("🟢 Бот запущено. Очікую сигнали...")
 
-updater = start_bot()
+app = start_bot()
 last_log_time = datetime.now() - timedelta(minutes=LOG_INTERVAL_MINUTES)
 
-while True:
-    try:
-        now = datetime.now()
-        if (now - last_log_time).total_seconds() >= LOG_INTERVAL_MINUTES * 60:
-            if active_symbols:
-                status_report()
-            last_log_time = now
+async def main_loop():
+    global last_log_time
+    while True:
+        try:
+            now = datetime.now()
+            if (now - last_log_time).total_seconds() >= LOG_INTERVAL_MINUTES * 60:
+                if active_symbols:
+                    status_report()
+                last_log_time = now
 
-        signal = check_mail()
-        if signal and signal[0] in active_symbols:
-            symbol, side = signal
-            send_telegram(f"📩 Сигнал: {symbol} {side}")
-            open_position(symbol, side)
+            signal = check_mail()
+            if signal and signal[0] in active_symbols:
+                symbol, side = signal
+                send_telegram(f"📩 Сигнал: {symbol} {side}")
+                open_position(symbol, side)
 
-        time.sleep(CHECK_DELAY)
-    except Exception as e:
-        send_telegram(f"‼️ Глобальна помилка: {e}")
-        time.sleep(10)
+            time.sleep(CHECK_DELAY)
+        except Exception as e:
+            send_telegram(f"‼️ Глобальна помилка: {e}")
+            time.sleep(10)
+
+import asyncio
+async def run():
+    await asyncio.gather(app.run_polling(), main_loop())
+
+asyncio.run(run())
