@@ -184,18 +184,35 @@ def check_mail():
 # =========================
 def make_status():
     balance = get_total_balance()
-    msg = f"📊 *Статус бота*\n💰 Баланс: {balance} USDT\n\n"
+    msg = f"📊 *Статус бота*\n\n💰 Баланс: {balance} USDT\n\n"
+
     for coin, data in SYMBOLS.items():
+        symbol = data["symbol"]
+        qty = data["qty"]
+
         if data["active"]:
-            pos = get_position_info(data["symbol"])
+            pos = get_position_info(symbol)
             if pos:
-                msg += f"➡️ {coin} ({data['qty']}): {pos['side']} {pos['size']}\n"
-                msg += f"   🎯 Вхід: {pos['entry']} | 📈 Поточна: {pos['mark']}\n"
-                msg += f"   📉 SL: {pos['stop']} | 💵 {pos['pnl_usdt']} USDT ({pos['pnl_percent']}%)\n\n"
+                msg += (
+                    f"📊 *{symbol}*\n"
+                    f"✅ Активний\n\n"
+                    f"⚙️ QTY: {qty} {symbol}\n\n"
+                    f"📌 Позиція: {pos['side']} {pos['size']} {symbol}\n"
+                    f"🎯 Ціна входу: {pos['entry']}\n"
+                    f"📈 Поточна: {pos['mark']}\n"
+                    f"📉 Стоп-лосс: {pos['stop']}\n"
+                    f"📊 PnL: {pos['pnl_usdt']} USDT ({pos['pnl_percent']}%)\n\n"
+                )
             else:
-                msg += f"➡️ {coin} ({data['qty']}): позицій немає\n\n"
+                msg += (
+                    f"📊 *{symbol}*\n"
+                    f"✅ Активний\n\n"
+                    f"⚙️ QTY: {qty} {symbol}\n"
+                    f"📌 Позицій немає\n\n"
+                )
         else:
-            msg += f"❌ {coin}: виключена\n\n"
+            msg += f"📊 *{symbol}*\n❌ Виключено\n\n"
+
     return msg
 
 def status_cmd(update: Update, context: CallbackContext):
