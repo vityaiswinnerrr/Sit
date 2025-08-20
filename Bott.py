@@ -59,7 +59,7 @@ def clear_cmd(update: Update, context: CallbackContext):
 def qty_cmd(update: Update, context: CallbackContext):
     try:
         cmd = update.message.text.split()[0].lower()
-        val = int(update.message.text.split()[1])
+        val = float(update.message.text.split()[1])   # ✅ дозволяємо float
         if cmd == "/qtydoge":
             SYMBOLS["DOGE"]["qty"] = val
         elif cmd == "/qtysol":
@@ -68,13 +68,13 @@ def qty_cmd(update: Update, context: CallbackContext):
             SYMBOLS["WLD"]["qty"] = val
         update.message.reply_text(f"🔄 QTY оновлено: {cmd.upper()} = {val}")
     except:
-        update.message.reply_text("⚠️ Використання: /qtydoge 500")
+        update.message.reply_text("⚠️ Використання: /qtydoge 500 або /qtysol 0.005")
 
 def choose_coin(update: Update, context: CallbackContext):
     keyboard = [
-        [InlineKeyboardButton("🐕 DOGE", callback_data="DOGE"),
-         InlineKeyboardButton("🔥 SOL", callback_data="SOL"),
-         InlineKeyboardButton("🌐 WLD", callback_data="WLD")],
+        [InlineKeyboardButton(" DOGE", callback_data="DOGE"),
+         InlineKeyboardButton(" SOL", callback_data="SOL"),
+         InlineKeyboardButton(" WLD", callback_data="WLD")],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     update.message.reply_text("Вибери монети для торгівлі:", reply_markup=reply_markup)
