@@ -24,9 +24,9 @@ LOG_INTERVAL_MINUTES = 2
 
 # === Монети ===
 SYMBOLS = {
-    "DOGE": {"symbol": "DOGEUSDT", "qty": 750, "active": False},
-    "SOL": {"symbol": "SOLUSDT", "qty": 500, "active": False},
-    "WLD": {"symbol": "WLDUSDT", "qty": 300, "active": False},
+    "DOGE": {"symbol": "DOGEUSDT", "qty": 750, "active": False, "sl": 3.7},
+    "SOL":  {"symbol": "SOLUSDT",  "qty": 500, "active": False, "sl": 2.5},
+    "WLD":  {"symbol": "WLDUSDT",  "qty": 300, "active": False, "sl": 2.5},
 }
 
 session = HTTP(api_key=API_KEY, api_secret=API_SECRET, recv_window=10000)
@@ -146,9 +146,46 @@ def close_current_position(symbol):
 
 def open_position(symbol, side, qty):
     try:
-        session.place_order(category="linear", symbol=symbol, side=side,
-                            order_type="Market", qty=qty, reduce_only=False)
-        send_telegram(f"✅ Відкрито {side} {qty} {symbol}")
+        # 1. Відкриваємо позицію маркетом
+        order = session.place_order(
+            category="linear",
+            symbol=symbol,
+            side=side,
+            order_type="Market",
+            qty=qty,
+            reduce_only=False
+        )
+
+        # 2. Беремо ціну входу
+        pos = get_position_info(symbol)
+        if not pos:
+            send_telegram(f"‼️ Не вдалося отримати позицію для {symbol}")
+            return
+
+        entry_price = pos["entry"]
+        sl_percent = None
+        for coin, data in SYMBOLS.items():
+            if data["symbol"] == symbol:
+                sl_percent = data["sl"]
+
+        if not sl_percent:
+            return
+
+        # 3. Розрахунок стоп-лосу
+        if side == "Buy":
+            stop_price = round(entry_price * (1 - sl_percent/100), 6)
+        else:
+            stop_price = round(entry_price * (1 + sl_percent/100), 6)
+
+        # 4. Встановлюємо стоп через trading stop
+        session.set_trading_stop(
+            category="linear",
+            symbol=symbol,
+            stopLoss=stop_price
+        )
+
+        send_telegram(f"✅ Відкрито {side} {qty} {symbol}\n📉 Стоп-лосс: {stop_price}")
+
     except Exception as e:
         send_telegram(f"‼️ Помилка відкриття {symbol}: {e}")
 
