@@ -196,7 +196,7 @@ def make_status():
                 msg += (
                     f"⚡️*{symbol}*\n"
                     f"✅ Активний\n\n"
-                    f"QTY: {qty} {symbol}\n\n"
+                    f" QTY: {qty} {symbol}\n\n"
                     f"🔰 Позиція: {pos['side']} {pos['size']} {symbol}\n"
                     f"🎯 Ціна входу: {pos['entry']}\n"
                     f"📈 Поточна: {pos['mark']}\n"
