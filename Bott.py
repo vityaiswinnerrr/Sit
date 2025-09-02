@@ -10,7 +10,7 @@ AI+SMC Bybit Trading Bot (single-file) — FIXED
 IMPORTANT: Replace the placeholder API and Telegram tokens with your OWN credentials.
 
 Requirements (pip):
-  pip install ccxt pandas numpy ta python-telegram-bot==20.* pybit
+  pip install ccxt pandas numpy ta python-telegram-bot==20.* pybi
 
 Env vars you must set:
   BYBIT_KEY, BYBIT_SECRET
